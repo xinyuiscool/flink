@@ -59,11 +59,14 @@ public class DataGeneratorPerCheckpoint {
                 "s3.path.style.access", "true",
                 "s3.access.key", "minioadmin",
                 "s3.secret.key", "minioadmin",
+                "presto.s3.multipart.min-file-size", "10077216",
                 "state.backend", "rocksdb",
                 "state.backend.incremental", "true",
-                "state.checkpoints.dir", "s3://flink-bucket/checkpoints",
-                "execution.savepoint.path", "s3://flink-bucket/checkpoints/bce0f8ee4522d0d50011b06c402026ca/chk-1"
+                "state.checkpoints.dir", "s3://flink-bucket/checkpoints"
+                // Uncomment for restoring from checkpoint
+                // "execution.savepoint.path", "s3://flink-bucket/checkpoints/bce0f8ee4522d0d50011b06c402026ca/chk-1"
         );
+
         Configuration flinkConfig = Configuration.fromMap(cfg);
         final StreamExecutionEnvironment env =
                 StreamExecutionEnvironment.getExecutionEnvironment(flinkConfig);
@@ -97,11 +100,22 @@ public class DataGeneratorPerCheckpoint {
 
     static final class Count extends RichFlatMapFunction<String, Tuple2<String, Integer>> {
         private transient ValueState<Integer> count;
+        private transient ValueState<String> words;
 
         @Override
         public void flatMap(String value, Collector<Tuple2<String, Integer>> out) throws Exception {
             int newCount = count.value() + 1;
             count.update(newCount);
+
+            /* Uncomment for creating state big enough for multi-upload
+            StringBuilder sb = new StringBuilder();
+            sb.append(words.value());
+
+            for (int i = 0; i < 100000; i++) {
+                sb.append("Mary has a little lamb.");
+            }
+            words.update(sb.toString());
+            */
 
             out.collect(new Tuple2<>(value, newCount));
         }
@@ -111,6 +125,10 @@ public class DataGeneratorPerCheckpoint {
             ValueStateDescriptor<Integer> descriptor =
                     new ValueStateDescriptor<>("count", TypeInformation.of(Integer.class), Integer.valueOf(0));
             count = getRuntimeContext().getState(descriptor);
+
+            ValueStateDescriptor<String> strDesc =
+                    new ValueStateDescriptor<>("words", TypeInformation.of(String.class), "");
+            words = getRuntimeContext().getState(strDesc);
         }
     }
 }
